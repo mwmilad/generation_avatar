@@ -16,7 +16,7 @@ from .geometry import (
     target_camera,
 )
 from .render import downsample, render
-from .segment import clean_mask, subject_alpha
+from .segment import clean_mask, refine_edges, subject_alpha
 from .utils import colorize_depth, load_image, resize_long_side, save_image, step
 
 
@@ -68,6 +68,8 @@ def generate_avatar(image_path: str | Path, cfg: PipelineConfig, out_dir: str | 
 
     with step("segmenting subject"):
         alpha = subject_alpha(rgb, cfg.segmenter)
+        if cfg.refine_mask_edges:
+            alpha = refine_edges(alpha, rgb)
         mask = clean_mask(alpha, erode_px=cfg.geometry.mask_erode_px)
         emit("mask", "01_mask.png", (mask * 255).astype(np.uint8)[:, :, None].repeat(3, 2))
 

@@ -13,7 +13,8 @@ how people quietly come out slimmer, taller and younger than they are.
 
 Here the body comes from geometry instead:
 
-1. **Segment** the subject (`briaai/RMBG-1.4`).
+1. **Segment** the subject (`mattmdjaga/segformer_b2_clothes`), then snap the outline to the
+   photo's real edges with GrabCut.
 2. **Estimate metric depth** (`Depth-Anything-V2-Metric`), giving a real-scale surface.
 3. **Reconstruct** a point cloud, and give it volume with a back shell whose thickness is derived
    from the subject's own silhouette width - so a heavy body stays heavy.
@@ -83,6 +84,20 @@ look that studio and fashion photography uses.
 Large moves cost fidelity: the further the camera travels, the more of the body was never visible
 in the original photo and has to be reconstructed. The pipeline reports that percentage and warns
 past 45%.
+
+## Swapping the segmenter
+
+The default is a plain SegFormer, chosen because it uses no `trust_remote_code` and therefore keeps
+working across transformers releases. A dedicated matting model gives a finer outline, especially
+around hair:
+
+```python
+cfg.segmenter = "briaai/RMBG-1.4"
+```
+
+That model's custom code predates `PreTrainedModel.post_init()`, so on recent transformers it fails
+with `'BriaRMBG' object has no attribute 'all_tied_weights_keys'`. `avatar/segment.py` installs a
+compatibility shim for it, and falls back to the SegFormer automatically if it still cannot load.
 
 ## Limits
 

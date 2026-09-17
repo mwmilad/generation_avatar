@@ -129,7 +129,15 @@ class PipelineConfig:
     render: RenderConfig = field(default_factory=RenderConfig)
     refine: RefineConfig = field(default_factory=RefineConfig)
 
-    segmenter: str = "briaai/RMBG-1.4"
+    # Default is a plain SegFormer human-parsing model: no `trust_remote_code`,
+    # so it does not break when transformers changes its model API.
+    # "briaai/RMBG-1.4" gives a finer matte and still works, but relies on
+    # custom code that lags behind transformers releases.
+    segmenter: str = "mattmdjaga/segformer_b2_clothes"
+
+    # Sharpen the mask against the photo's edges with GrabCut. Worth it for
+    # semantic segmentation, unnecessary after a dedicated matting model.
+    refine_mask_edges: bool = True
     depth_model: str = "depth-anything/Depth-Anything-V2-Metric-Indoor-Large-hf"
 
     # Longest side the source photo is resized to before depth estimation.
