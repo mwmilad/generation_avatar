@@ -17,6 +17,62 @@ def _feather(mask: np.ndarray, radius: int) -> np.ndarray:
     return cv2.GaussianBlur(mask.astype(np.float32), (radius, radius), 0)
 
 
+def _first_method(obj, *names) -> bool:
+    """Call whichever of these methods exists. Returns whether one did."""
+    for name in names:
+        method = getattr(obj, name, None)
+        if callable(method):
+            method()
+            return True
+    return False
+
+
+def _load(cls, model_id: str, **kwargs):
+    """Load a checkpoint, preferring its fp16 weights when it publishes them."""
+    if kwargs.get("torch_dtype") is not None:
+        try:
+            return cls.from_pretrained(model_id, variant="fp16", **kwargs)
+        except Exception:
+            pass
+    return cls.from_pretrained(model_id, **kwargs)
+
+
+def _fp16_vae(dtype) -> dict:
+    """SDXL's own VAE overflows in fp16 and has to be run upcast to fp32.
+
+    On a 16GB card that upcast is the difference between fitting and not, so
+    the drop-in fp16-safe VAE is used when it is available. Failing to fetch
+    it is not fatal - diffusers falls back to upcasting.
+    """
+    try:
+        from diffusers import AutoencoderKL
+
+        return {"vae": AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=dtype)}
+    except Exception as exc:
+        print(f"[avatar] fp16-safe VAE unavailable ({type(exc).__name__}); using the default VAE")
+        return {}
+
+
+def _apply_memory_savings(pipe, dev: str) -> None:
+    """Enable offloading and tiling, tolerating diffusers' API moves.
+
+    VAE tiling and slicing used to be pipeline methods and now live on the VAE
+    itself, so both spellings are attempted rather than assuming a version.
+    """
+    if dev != "cuda":
+        pipe.to(dev)
+        return
+
+    if not _first_method(pipe, "enable_model_cpu_offload"):
+        pipe.to(dev)
+
+    vae = getattr(pipe, "vae", None)
+    if vae is not None:
+        _first_method(vae, "enable_tiling") or _first_method(pipe, "enable_vae_tiling")
+        _first_method(vae, "enable_slicing") or _first_method(pipe, "enable_vae_slicing")
+    _first_method(pipe, "enable_attention_slicing")
+
+
 class Refiner:
     """SDXL + depth-ControlNet passes that add photographic texture to the render.
 
@@ -39,16 +95,21 @@ class Refiner:
 
         dev = device()
         dtype = torch.float16 if dev == "cuda" else torch.float32
-        controlnet = ControlNetModel.from_pretrained(self.cfg.controlnet_model, torch_dtype=dtype)
-        pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
-            self.cfg.base_model, controlnet=controlnet, torch_dtype=dtype, variant="fp16" if dev == "cuda" else None
+
+        controlnet = _load(ControlNetModel, self.cfg.controlnet_model, torch_dtype=dtype)
+        extra = {}
+        if dev == "cuda" and self.cfg.vae_fp16_fix:
+            extra = _fp16_vae(dtype)
+
+        pipe = _load(
+            StableDiffusionXLControlNetImg2ImgPipeline,
+            self.cfg.base_model,
+            controlnet=controlnet,
+            torch_dtype=dtype,
+            **extra,
         )
         pipe.set_progress_bar_config(disable=True)
-        if dev == "cuda":
-            pipe.enable_model_cpu_offload()
-            pipe.enable_vae_tiling()
-        else:
-            pipe.to(dev)
+        _apply_memory_savings(pipe, dev)
         self._pipe = pipe
         return pipe
 

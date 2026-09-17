@@ -99,6 +99,10 @@ class RefineConfig:
         "watermark, text"
     )
 
+    # Swap in a VAE that is numerically safe in fp16. Saves the fp32 upcast
+    # SDXL's own VAE needs, which matters on a 16GB card.
+    vae_fp16_fix: bool = True
+
     # Denoising strength for the body pass. Keep this low: the render already
     # carries the true body geometry and high strength lets the model reshape it.
     strength: float = 0.30
