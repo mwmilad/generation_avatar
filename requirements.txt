@@ -1,0 +1,10 @@
+# Colab already ships torch/torchvision; leave them out so pip doesn't
+# reinstall a CUDA build over the working one.
+transformers>=4.45
+diffusers>=0.31
+accelerate>=0.34
+safetensors>=0.4
+huggingface_hub>=0.25
+opencv-python-headless>=4.9
+numpy>=1.26
+pillow>=10.0
